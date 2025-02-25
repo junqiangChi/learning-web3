@@ -19,4 +19,6 @@
  10. [合约攻击方式及避免](./level1/task10/常见的合约攻击方式以及如何避免作业题.md)
    
 ## level2
- 1. [go语言语法](./level2/goBase/)
+ 1. [go基础语法](./level2/1.go-base/)
+ 2. [gin语法](./level2/2.gin/)
+ 3. [go以太坊](./level2/3.go-ethereum/geth/)
