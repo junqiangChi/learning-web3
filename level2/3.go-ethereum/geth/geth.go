@@ -1,24 +1,21 @@
 package geth
 
 import (
-	"fmt"
-	"github.com/ethereum/go-ethereum/common"
 	"log"
-
-	"github.com/ethereum/go-ethereum/ethclient"
+	"testing"
 )
 
-func GethDemo() {
-	client, err := ethclient.Dial("https://cloudflare-eth.com")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Println("we have a connection")
-	_ = client // we'll use this in the upcoming sections
+func init() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
 }
 
-func GethDemo1() {
-	address := common.HexToAddress("0x71c7656ec7ab88b098defb751b7401b5f6d8976f")
-	fmt.Println(address.Hex())
+func TestGeth(t *testing.T) {
+	//log.Println("geth GethDemo...")
+	//GethDemo()
+	//log.Println("geth GethDemo1...")
+	//GethDemo1()
+	//log.Println("geth GethDemo2...")
+	//GethDemo2()
+	log.Println("geth GethDemo3...")
+	GethDemo3()
 }
