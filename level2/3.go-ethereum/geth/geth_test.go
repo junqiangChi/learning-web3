@@ -10,7 +10,6 @@ func init() {
 }
 
 func TestGeth(t *testing.T) {
-
 	//GethDemo()
 	//GethDemo1()
 	//GethDemo2()
@@ -21,10 +20,17 @@ func TestGeth(t *testing.T) {
 	//GethDemo7()
 	//GethDemo8()
 	//GethDemo9()
-	GethDemo10()
+	//GethDemo10()
 	//GethDemo11()
 	//GethDemo12()
 	//GethDemo13()
+	//GethDemo14()
+	//GethDemo15()
+	//GethDemo16()
+	//GethDemo17()
+	//GethDemo18()
+	//GethDemo19()
+	GethDemo20()
 }
 
 // # 部署合约

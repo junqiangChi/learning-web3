@@ -7,6 +7,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -21,6 +23,7 @@ import (
 	"math/big"
 	"os"
 	"regexp"
+	"strings"
 )
 
 var client *ethclient.Client
@@ -243,7 +246,7 @@ func GethDemo7() {
 */
 func GethDemo8() {
 	log.Println("geth GethDemo8...")
-	block, err := client.BlockByNumber(context.Background(), big.NewInt(4))
+	block, err := client.BlockByNumber(context.Background(), big.NewInt(11))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -599,17 +602,263 @@ func GethDemo12() {
 
 func GethDemo13() {
 	log.Println("geth GethDemo13...")
-	rawTx := "f8b20684464c03bf826567945fbdb2315678afecb367f032d93f642f64180aa3880de0b6b3a7640000b844a9059cbb000000000000000000000000df3e18d64bc6a983f673ab319ccae4f1a57c70970000000000000000000000000000000000000000000000000de0b6b3a764000082f4f6a09f70ae0fdea61ad1493392bcdde53dcfa330ff57c1a100b8a2956b6fb6043671a04617ce8add6f82d9d6e505b11fe3609f4a1ea0c99190aeb720c937f172bb80e6"
+	rawTx := "f8b20184638d32b2826567945fbdb2315678afecb367f032d93f642f64180aa3880de0b6b3a7640000b844a9059cbb00000000000000000000000071be63f3384f5fb98995898a86b02fb2426c57880000000000000000000000000000000000000000000000000de0b6b3a764000082f4f6a042553cbbbc84294336e720ecaba5d273e6c22c4da35a9460aaa0a794c0bae6e0a00b422a0a573bfb58222c3f9f4d733512a8fc55a36ff2ff1660483f0875b6c0f4"
 	rawTxBytes, err := hex.DecodeString(rawTx)
 	if err != nil {
 		log.Fatal(err)
 	}
-	tx := new(types.Transaction)
-	rlp.DecodeBytes(rawTxBytes, tx)
 
-	err = client.SendTransaction(context.Background(), tx)
+	tx := new(types.Transaction)
+	err = rlp.DecodeBytes(rawTxBytes, tx)
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Println("tx sent:", tx.Hash().Hex())
+	// 获取发送者地址
+	sender, err := types.Sender(types.NewEIP155Signer(tx.ChainId()), tx)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// 获取账户的当前 nonce 值
+	nonce, err := client.PendingNonceAt(context.Background(), sender)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// 创建一个新的交易，使用正确的 nonce 值
+	newTx := types.NewTx(&types.LegacyTx{
+		Nonce:    nonce,
+		GasPrice: tx.GasPrice(),
+		Gas:      tx.Gas(),
+		To:       tx.To(),
+		Value:    tx.Value(),
+		Data:     tx.Data(),
+	})
+
+	// 获取目标网络的链 ID
+	chainID, err := client.NetworkID(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// 签名新交易，使用正确的链 ID
+	privateKey, err := crypto.HexToECDSA("701b615bbdfb9de65240bc28bd21bbc0d996645a3dd57e7b12bc2bdf6f192c82")
+	if err != nil {
+		log.Fatal(err)
+	}
+	signer := types.NewEIP155Signer(chainID)
+	signedTx, err := types.SignTx(newTx, signer, privateKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = client.SendTransaction(context.Background(), signedTx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println("rawTxBytes: ", tx.Hash().Hex())
+
+}
+
+/*
+部署智能合约
+*/
+
+func GethDemo14() {
+	/*
+		$ solcjs --abi Store.sol
+		$ solcjs --bin Store.sol
+		$ abigen --bin=Store_sol_Store.bin --abi=Store_sol_Store.abi --pkg=store --out=Store.go
+	*/
+
+	log.Println("geth GethDemo14...")
+	privateKey, err := crypto.HexToECDSA("701b615bbdfb9de65240bc28bd21bbc0d996645a3dd57e7b12bc2bdf6f192c82")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	publicKey := privateKey.Public()
+	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
+	if !ok {
+		log.Fatal("cannot assert type: publicKey is not of type *ecdsa.PublicKey")
+	}
+
+	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
+	nonce, err := client.PendingNonceAt(context.Background(), fromAddress)
+	if err != nil {
+		log.Fatal(err)
+	}
+	gasPrice, err := client.SuggestGasPrice(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	auth := bind.NewKeyedTransactor(privateKey)
+	auth.Nonce = big.NewInt(int64(nonce))
+	auth.Value = big.NewInt(0)
+	auth.GasPrice = gasPrice
+	auth.GasLimit = uint64(300000)
+
+	input := "1.0"
+	address, tx, instance, err := DeployStore(auth, client, input)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println("address: ", address.Hex())
+	log.Println("tx: ", tx.Hash().Hex())
+	log.Println("instance: ", instance)
+}
+
+/*
+加载智能合约
+*/
+
+func GethDemo15() {
+	address := common.HexToAddress("0xcd3B766CCDd6AE721141F452C550Ca635964ce71")
+	store, err := NewStore(address, client)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println("store:", &store)
+}
+
+/*
+查询智能合约
+*/
+
+func GethDemo16() {
+	// 部署的智能合约地址
+	address := common.HexToAddress("0x208E6D25Fb7F1915BD46F569da45E48a6ccD7167")
+	store, err := NewStore(address, client)
+	if err != nil {
+		log.Fatal(err)
+	}
+	version, err := store.Version(nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println("version:", version) //1.0
+}
+
+/*
+写入智能合约
+*/
+
+func GethDemo17() {
+	privateKey, err := crypto.HexToECDSA("8166f546bab6da521a8369cab06c5d2b9e46670292d85c875ee9ec20e84ffb61")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	publicKey := privateKey.Public()
+	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
+	if !ok {
+		log.Fatal("cannot assert type: publicKey is not of type *ecdsa.PublicKey")
+	}
+
+	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
+	nonce, err := client.PendingNonceAt(context.Background(), fromAddress)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	gasPrice, err := client.SuggestGasPrice(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
+	auth := bind.NewKeyedTransactor(privateKey)
+	auth.Nonce = big.NewInt(int64(nonce))
+	auth.Value = big.NewInt(0)
+	auth.GasPrice = gasPrice
+	auth.GasLimit = uint64(300000)
+
+	address := common.HexToAddress("0x63e0e8Cd1618d51d07E645d9E34326cA5fF714af")
+	store, err := NewStore(address, client)
+	if err != nil {
+		log.Fatal(err)
+	}
+	key := [32]byte{}
+	value := [32]byte{}
+	copy(key[:], "foo")
+	copy(value[:], "bar")
+
+	tx, err := store.SetItem(auth, key, value)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println("tx:", tx.Hash().Hex())
+
+	items, err := store.Items(nil, key)
+	log.Println("items:", items)
+}
+
+/*
+读取已部署的智能合约的字节码
+*/
+func GethDemo18() {
+	address := common.HexToAddress("0x63e0e8Cd1618d51d07E645d9E34326cA5fF714af")
+
+	byteCode, err := client.CodeAt(context.Background(), address, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println("byteCode:", hex.EncodeToString(byteCode))
+}
+
+/*
+订阅事件日志
+*/
+func GethDemo19() {
+	client, _ := ethclient.Dial("ws://localhost:8545")
+	address := common.HexToAddress("0x63e0e8Cd1618d51d07E645d9E34326cA5fF714af")
+	query := ethereum.FilterQuery{
+		Addresses: []common.Address{address},
+	}
+	logs := make(chan types.Log)
+	sub, err := client.SubscribeFilterLogs(context.Background(), query, logs)
+	if err != nil {
+		log.Fatal(err)
+	}
+	for {
+		select {
+		case err := <-sub.Err():
+			log.Fatal(err)
+		case cLog := <-logs:
+			log.Println("log:", cLog)
+		}
+	}
+}
+
+/*
+读取事件日志
+*/
+func GethDemo20() {
+	contractAddress := common.HexToAddress("0x63e0e8Cd1618d51d07E645d9E34326cA5fF714af")
+	query := ethereum.FilterQuery{
+		FromBlock: big.NewInt(11),
+		ToBlock:   big.NewInt(11),
+		Addresses: []common.Address{
+			contractAddress,
+		},
+	}
+	logs, err := client.FilterLogs(context.Background(), query)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println("logs:", logs) // 日志为ABI编码
+	// 解码
+	contractAbi, err := abi.JSON(strings.NewReader(StoreMetaData.ABI))
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, vLog := range logs {
+		unpack, err := contractAbi.Unpack("ItemSet", vLog.Data)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Println("unpack:", unpack)
+		unpackKeyByte := unpack[0].([32]byte)
+		unpackValueByte := unpack[1].([32]byte)
+		log.Println("key:", string(unpackKeyByte[0:3]), ", value", string(unpackValueByte[0:3]))
+	}
 }
